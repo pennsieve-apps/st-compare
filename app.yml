@@ -1,0 +1,137 @@
+# yaml-language-server: $schema=https://schemas.pennsieve.io/app-manifest/v1.json
+schemaVersion: "1.0"
+application:
+  name: Spatial Condition Comparison
+  description: >-
+    Compares spatial transcriptomics samples between conditions (e.g. disease vs control, tissue
+    A vs B), per label: a spatial domain from st-domains, a cell type from st-celltype or the
+    dominant type from cell2location. (1) Composition: each sample's fraction of observations
+    per label, tested per label between condition levels on centred log-ratio (CLR) proportions
+    (Welch t and Mann-Whitney for two levels, ANOVA and Kruskal-Wallis for more; Benjamini-
+    Hochberg). (2) Pseudobulk differential expression: raw counts summed per sample and label,
+    tested per label with PyDESeq2 (DESeq2's negative binomial GLM, ~ condition or
+    ~ block + condition), each level against a reference, with the sample as the replicate.
+    Writes tables, composition boxplots, volcano plots, a DE heatmap and a summary for the
+    report, all under a folder named after LABEL.
+  type: processor
+  tags:
+    - spatial-transcriptomics
+    - transcriptomics
+    - genomics
+    - single-cell
+    - visium
+    - differential-expression
+    - differential-abundance
+    - pseudobulk
+    - statistics
+runtime:
+  cpu: 2048
+  memory: 3008
+  # standard (ECS) by default; a light step that a workflow can also run as a Lambda function
+  # (the image serves both, see processor/entry.py). Measured on the 8-sample TLS Visium demo:
+  # see README "Runtime".
+  computeTypes:
+    - standard
+    - lambda
+  timeoutSeconds: 900
+parameters:
+  - name: LABEL
+    type: string
+    description: >-
+      Name of this comparison (lowercase letters, digits, '-'); every output is written under
+      OUTPUT_DIR/<LABEL>/ so several comparisons (domains, cell types) can feed one report.
+      Empty: LABEL_COLUMN with '_' as '-' (e.g. domain, cell-type).
+    defaultValue: ""
+  - name: LABEL_COLUMN
+    type: string
+    description: >-
+      labels.csv column to compare: domain (st-domains), cell_type or cluster (st-celltype),
+      dominant_type (cell2location).
+    defaultValue: "domain"
+  - name: CONDITION_COLUMN
+    type: string
+    description: samples.csv column with the condition of each sample (condition, tissue, treatment, ...).
+    defaultValue: "condition"
+  - name: REFERENCE_LEVEL
+    type: string
+    description: >-
+      The condition level the others are compared with (log2 fold change > 0 = higher than in the
+      reference). Empty: the first level alphabetically.
+    defaultValue: ""
+  - name: BLOCK_COLUMN
+    type: string
+    description: >-
+      Optional samples.csv column with a blocking factor (donor, patient, batch, slide), added to
+      the DE design as ~ block + condition. Dropped for a label (with a note) when it has one level
+      there or is confounded with the condition. Empty: no block.
+    defaultValue: ""
+  - name: MIN_OBS_PER_PSEUDOBULK
+    type: integer
+    description: A sample contributes a pseudobulk to a label only with at least this many observations (spots, bins, cells) of it.
+    defaultValue: 20
+  - name: MIN_SAMPLES_PER_GROUP
+    type: integer
+    description: >-
+      A label is tested for DE only when the reference and at least one other level each have this
+      many pseudobulks (levels with fewer are left out for that label). At least 2.
+    defaultValue: 2
+  - name: MIN_COUNT_GENE
+    type: integer
+    description: >-
+      A gene is tested in a label when it has at least this many counts in at least as many of the
+      label's pseudobulks as the smallest condition group has.
+    defaultValue: 10
+  - name: FDR
+    type: number
+    description: Benjamini-Hochberg adjusted p-value below which a result is significant.
+    defaultValue: 0.05
+  - name: MAX_PLOTS
+    type: integer
+    description: Volcano plots for at most this many label x comparison tests (most hits first).
+    defaultValue: 8
+  - name: SEED
+    type: integer
+    description: Seed for the random number generators (the analysis itself has no random step).
+    defaultValue: 42
+  - name: THREADS
+    type: integer
+    description: Threads for PyDESeq2 and BLAS; 0 = from the container's CPU quota.
+    defaultValue: 0
+# Each input in its own folder (placement: subfolder) when linked; without links the files are
+# found by name anywhere under INPUT_DIR.
+inputs:
+  - name: spatial
+    description: >-
+      <sample_id>.h5ad, one per sample, from st-qc (raw counts in layers["counts"]; st-prep's output
+      with counts in X also works).
+    mediaTypes:
+      - application/x-hdf5
+    placement: subfolder
+    required: true
+  - name: labels
+    description: >-
+      labels.csv (sample_id, obs_id, one or more label columns) from st-domains, st-celltype or
+      cell2location.
+    mediaTypes:
+      - text/csv
+    placement: subfolder
+    required: true
+  - name: metadata
+    description: st-prep's samples.csv (sample_id, the condition column, optional block column, ...).
+    mediaTypes:
+      - text/csv
+      - application/json
+    placement: subfolder
+    required: true
+# One output: the whole of OUTPUT_DIR; the app writes into OUTPUT_DIR/<LABEL>/.
+outputs:
+  - name: compare
+    description: >-
+      <LABEL>/composition.csv, <LABEL>/composition_tests.csv, <LABEL>/de.csv, <LABEL>/de_summary.csv,
+      <LABEL>/pseudobulk_counts.csv.gz, <LABEL>/pseudobulk_samples.csv, <LABEL>/summary.json,
+      <LABEL>/composition.png, <LABEL>/volcano_*.png, <LABEL>/de_heatmap.png, <LABEL>/provenance.json.
+    mediaTypes:
+      - text/csv
+      - application/gzip
+      - application/json
+      - image/png
