@@ -195,16 +195,53 @@ the same environment variables and runs the same `main()` (non-zero exit -> the 
 raises, so the step fails). Writes go only to `OUTPUT_DIR` and `/tmp`; checked with
 `docker run --read-only --tmpfs /tmp` through the handler.
 
-RUNTIME_TABLE
+Measured with `docker run --platform linux/amd64 --memory 3g --cpus 2 --network none` (amd64
+emulation on an M-series Mac), peak RSS from `getrusage` and cgroup `memory.peak` (which
+includes page cache from reading the `.h5ad` files):
+
+| Data | labels tested | wall time | peak RSS | cgroup peak |
+|---|---|---|---|---|
+| TLS Visium demo, st-qc + st-domains output: 8 samples, 27,497 spots, 15,392 genes in every sample, 30 domains | 10 of 30 | 134 s (PyDESeq2 127 s) | 681 MB | 1.07 GB |
+| TLS Visium demo, st-qc output with the pathologist annotations as labels (6 labels) | 5 of 6 | 88 s | 680 MB | 1.06 GB |
+| Synthetic Visium HD scale: 4 samples x 500,000 bins x 18,000 genes (50 M counts each), 10 labels | 10 | 317 s (reading 30 s, PyDESeq2 275 s) | 686 MB | 2.88 GB (page cache of 3.1 GB of input) |
+| Synthetic fixture: 6 samples x 300 spots x 200 genes | 3 | 8 s | 295 MB | |
+
+So 2 vCPU / 3008 MB (Lambda's ceiling) has ample room: the process itself stays under 0.7 GB
+because the counts are streamed and only labels x genes sums are kept.
 
 Time is dominated by PyDESeq2: about 10-40 s per label under emulation, growing with the
 number of genes that pass the filter and the number of pseudobulks; memory barely depends on
 the number of observations. Many labels (e.g. 20+ cell types) on a large gene set can approach
-Lambda's 15-minute limit; run those on `standard`. Image: IMAGE_SIZE.
+Lambda's 15-minute limit; run those on `standard`. Image: 161 MB compressed, 687 MB unpacked (no scanpy, numba or torch).
 
 ## Results on the demo data
 
-RESULTS
+TLS Visium demo (Dawo et al. 2025; 3 kidney and 5 lung tumour sections), `st-prep -> st-qc ->
+st-domains`, then `LABEL_COLUMN=domain CONDITION_COLUMN=tissue` (reference `kidney`, the
+first alphabetically), defaults otherwise. Output in the workflow repository under
+`data/work/tls/compare/domain/`.
+
+- **Composition: 0 of 30 domains change significantly** (FDR 0.05). The strongest
+  candidates are kidney-specific domains (D13: 7.4 % of kidney spots vs ~0.2 % of lung,
+  p = 0.006, q = 0.19; D08 and D14 also near-absent in lung) and D05, more common in lung
+  (8.7 % vs 5.2 %, p = 0.037, q = 0.55). Many of st-domains' 30 domains occur in only one or
+  two sections (sample- or organ-specific), which with 3 vs 5 samples cannot reach
+  significance after correction across 30 labels.
+- **Pseudobulk DE: 10 of 30 domains tested** (20 skipped: fewer than 2 sections with >= 20
+  spots of the domain in kidney or in lung), **1,663 significant gene x domain results**.
+  Every tested domain shows the organ: lung surfactant genes (SFTPB, SFTPC, SLC34A2) and
+  immunoglobulins (IGHG1/3/4, IGHD) up in lung; kidney tubule genes (FXYD2, HAVCR1, CDH16,
+  KCNJ16, DEFB1, BHMT2) and CRYAB down. D02, the domain that best matches the pathologists'
+  TLS annotation (F1 0.52 in st-domains' `annotation_match.csv`), has 125 hits, with CCL18
+  and FASN up in lung TLS.
+- With the **pathologist annotations** as labels instead (`tests/labels_from_obs.py` on
+  st-qc's output; `data/work/tls/compare/annotation/`): no composition change (TLS 2.6 % of
+  kidney vs 4.2 % of lung spots, q = 0.88); DE in 5 of 6 annotations (Lymph_node only in one
+  lung section), 2,124 significant results: Tumor 1,137, Unassigned 558, Normal 383, TLS 31,
+  Immune 15 (only 2 kidney sections with >= 20 Immune spots).
+
+As the limitations below say, kidney vs lung here is organ, tumour type and patient at once;
+the DE mostly recovers organ identity, which is a sanity check rather than a finding.
 
 ## Limitations
 
