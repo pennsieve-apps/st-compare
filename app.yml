@@ -105,7 +105,9 @@ inputs:
       <sample_id>.h5ad, one per sample, from st-qc (raw counts in layers["counts"]; st-prep's output
       with counts in X also works).
     mediaTypes:
-      - application/x-hdf5
+      - "application/x-hdf5; profile=anndata"
+    formats:
+      - format_3590
     placement: subfolder
     required: true
   - name: labels
