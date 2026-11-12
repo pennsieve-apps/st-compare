@@ -1,5 +1,6 @@
 cff-version: 1.2.0
-message: If you use this app, please cite it and the works it builds on, listed under references.
+message: >-
+  If you use this app, please cite the work it implements (preferred-citation), this release, and Pennsieve (RRID:SCR_021677); the other works it builds on are listed under references.
 type: software
 title: st-compare
 abstract: 'Compares spatial transcriptomics samples between conditions, per label (spatial domain or cell type): label composition
@@ -24,6 +25,27 @@ keywords:
 - pseudobulk
 - DESeq2
 - compositional-data
+# The work this app implements; the release report's "How to cite" puts it first.
+preferred-citation:
+  type: article
+  title: Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2
+  authors:
+  - family-names: Love
+    given-names: Michael I
+  - family-names: Huber
+    given-names: Wolfgang
+  - family-names: Anders
+    given-names: Simon
+  year: 2014
+  journal: Genome Biology
+  volume: 15
+  issue: '12'
+  start: '550'
+  doi: 10.1186/s13059-014-0550-8
+  identifiers:
+  - type: other
+    value: PMID:25516281
+    description: PubMed ID
 references:
 - type: article
   title: Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2
